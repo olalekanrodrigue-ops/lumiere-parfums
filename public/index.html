@@ -121,21 +121,35 @@ nav {
 
 /* ===== HERO ===== */
 #page-home {
-  background: radial-gradient(ellipse at 30% 50%, #2a1a08 0%, var(--dark) 60%);
+  background: var(--dark);
   display: none;
 }
 #page-home.active { display: flex; flex-direction: column; }
 .hero {
   flex: 1; display: flex; align-items: center; justify-content: center;
   padding: 60px; position: relative; overflow: hidden; min-height: calc(100vh - 80px);
+  background-image: url('/hero-perfumes.png');
+  background-size: cover;
+  background-position: center 40%;
+  background-repeat: no-repeat;
+}
+.hero::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    rgba(13,10,7,0.82) 0%,
+    rgba(13,10,7,0.65) 40%,
+    rgba(26,16,8,0.72) 100%
+  );
+  z-index: 0;
 }
 .hero::before {
   content: 'LUMIÈRE'; position: absolute; font-family: 'Cormorant Garamond', serif;
-  font-size: clamp(60px, 30vw, 300px); color: rgba(201,169,110,0.04);
+  font-size: clamp(60px, 30vw, 300px); color: rgba(201,169,110,0.06);
   letter-spacing: clamp(4px, 2vw, 20px);
   font-weight: 300; white-space: nowrap; pointer-events: none;
   top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 100%; text-align: center;
+  width: 100%; text-align: center; z-index: 1;
 }
 .hero-content { text-align: center; position: relative; z-index: 1; }
 .hero-tag { font-size: 10px; letter-spacing: 6px; text-transform: uppercase; color: var(--gold); margin-bottom: 24px; }
@@ -605,36 +619,6 @@ nav {
     </div>
   </div>
 
-  <!-- Section visuelle parfums -->
-  <div class="hero-visual-section">
-    <div class="hero-visual-inner">
-      <div class="hero-visual-deco hero-visual-deco--tl"></div>
-      <div class="hero-visual-deco hero-visual-deco--br"></div>
-      <div class="hero-visual-label">
-        <span class="hero-tag-diamond"></span>
-        Collection Prestige
-        <span class="hero-tag-diamond"></span>
-      </div>
-      <div class="hero-visual-frame">
-        <svg class="hero-visual-border" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <rect x="1" y="1" width="98" height="98" fill="none" stroke="rgba(201,169,110,0.35)" stroke-width="0.5"/>
-          <rect x="3.5" y="3.5" width="93" height="93" fill="none" stroke="rgba(201,169,110,0.15)" stroke-width="0.3"/>
-          <line x1="1" y1="1" x2="8" y2="1" stroke="rgba(201,169,110,0.8)" stroke-width="1.2"/>
-          <line x1="1" y1="1" x2="1" y2="8" stroke="rgba(201,169,110,0.8)" stroke-width="1.2"/>
-          <line x1="99" y1="1" x2="92" y2="1" stroke="rgba(201,169,110,0.8)" stroke-width="1.2"/>
-          <line x1="99" y1="1" x2="99" y2="8" stroke="rgba(201,169,110,0.8)" stroke-width="1.2"/>
-          <line x1="1" y1="99" x2="8" y2="99" stroke="rgba(201,169,110,0.8)" stroke-width="1.2"/>
-          <line x1="1" y1="99" x2="1" y2="92" stroke="rgba(201,169,110,0.8)" stroke-width="1.2"/>
-          <line x1="99" y1="99" x2="92" y2="99" stroke="rgba(201,169,110,0.8)" stroke-width="1.2"/>
-          <line x1="99" y1="99" x2="99" y2="92" stroke="rgba(201,169,110,0.8)" stroke-width="1.2"/>
-        </svg>
-        <img src="/hero-perfumes.png" alt="Collection de parfums premium" class="hero-visual-img" loading="lazy">
-        <div class="hero-visual-overlay"></div>
-      </div>
-      <div class="hero-visual-caption">
-        <span>Dior · Gucci · &amp; Plus</span>
-      </div>
-    </div>
   </div>
 </div>
 
