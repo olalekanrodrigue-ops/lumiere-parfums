@@ -231,11 +231,22 @@ function updateNavUser() {
   const sec = document.getElementById('nav-user-section');
   if (state.currentUser) {
     sec.innerHTML = `
-      <button class="btn-nav" style="display:inline-flex;align-items:center;gap:6px" onclick="showPage('profile')">
-        ${SVG.user} ${escHtml(state.currentUser.name.split(' ')[0])}
+      <button class="nav-profile-btn" onclick="showPage('profile')" title="${escHtml(state.currentUser.name)}">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </button>`;
   } else {
     sec.innerHTML = `<button class="btn-nav" onclick="showPage('auth')" data-i18n="btn-login">Connexion</button>`;
+  }
+  // Bouton hero accueil : adapter selon connexion
+  const heroBtn = document.getElementById('hero-account-btn');
+  if (heroBtn) {
+    if (state.currentUser) {
+      heroBtn.textContent = 'Voir votre Profil';
+      heroBtn.onclick = () => showPage('profile');
+    } else {
+      heroBtn.textContent = 'Créer un Compte';
+      heroBtn.onclick = () => showPage('auth');
+    }
   }
   // Mobile menu : afficher/cacher lien Profil
   const profileLink = document.getElementById('mobile-profile-link');
@@ -244,7 +255,7 @@ function updateNavUser() {
   updateCartCount();
   // Bottom nav : label du bouton compte
   const lbl = document.getElementById('bnav-account-label');
-  if (lbl) lbl.textContent = state.currentUser ? state.currentUser.name.split(' ')[0] : 'Compte';
+  if (lbl) lbl.textContent = state.currentUser ? 'Profil' : 'Compte';
 }
 
 // Bouton compte de la bottom nav
@@ -549,38 +560,15 @@ async function listenOrders() {
 
 function renderTracking() {
   if (!state.currentUser) return;
-  const box = document.getElementById('tracking-content');
-  if (!box) return;
-
-  // Réinitialise le champ de recherche à chaque ouverture (pas d'auto-remplissage)
+  // Réinitialise le champ de recherche à chaque ouverture
   const inp = document.getElementById('tracking-input');
   if (inp) { inp.value = ''; }
+  // Vide les résultats — chaque commande reste confidentielle,
+  // visible uniquement après saisie du code de suivi personnel.
   const resultBox = document.getElementById('tracking-result');
   if (resultBox) resultBox.innerHTML = '';
-
-  // Le serveur /api/orders/me retourne déjà uniquement les commandes du client connecté
-  const orders = state.isAdmin
-    ? state.orders
-    : state.orders;
-
-  if (orders.length === 0) {
-    box.innerHTML = `<p style="text-align:center;color:var(--text-dim);font-size:14px;padding:40px 0">Aucune commande pour le moment</p>`;
-    return;
-  }
-
-  box.innerHTML = orders.map(o => {
-    const tc     = escHtml(o.trackingCode || o.trackingcode || '—');
-    const status = o.status || 'pending';
-    const items  = (o.items || []).map(i => escHtml(i.product_name) + ' ×' + i.quantity).join(', ');
-    const { icon, label } = statusInfo(status);
-    return `
-      <div class="tracking-order-card">
-        <div class="t-code">${tc}</div>
-        <div class="t-items">${items}</div>
-        <div class="t-total">${o.total.toLocaleString('fr-FR')} $</div>
-        <div><span class="t-status ${status}">${icon} ${label}</span></div>
-      </div>`;
-  }).join('');
+  const box = document.getElementById('tracking-content');
+  if (box) box.innerHTML = '';
 }
 
 function statusInfo(status) {
