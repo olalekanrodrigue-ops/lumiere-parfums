@@ -35,7 +35,11 @@ let state = {
   products       : [],
   orders         : [],
   customers      : [],
-  settings       : { bankName:'', bankAccount:'', bankHolder:'', },
+  promoCodes     : [],
+  activePromo    : null,   // { code, discount, finalTotal }
+  settings       : { bankName:'', bankAccount:'', bankHolder:'', bankMobile:'',
+                     siteName:'', siteMotto:'', sitePhone:'', siteEmail:'',
+                     siteWhatsapp:'', siteInstagram:'', siteFacebook:'', siteAddress:'' },
   currentEditProductId : null,
   currentUpdateOrderId : null,
 };
@@ -415,9 +419,14 @@ function goToPayment() {
 //  PAIEMENT
 // ════════════════════════════════════════════════════════════
 async function renderPayment() {
-  const total = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
+  // Reset promo state à chaque ouverture
+  state.activePromo = null;
+  const promoInput = document.getElementById('promo-apply-input');
+  if (promoInput) promoInput.value = '';
+  const promoResult = document.getElementById('promo-result');
+  if (promoResult) promoResult.innerHTML = '';
 
-  // Re-fetch les paramètres en direct pour éviter le problème de race condition
+  // Re-fetch les paramètres en direct
   try {
     const fresh = await fetch('/api/settings').then(r => r.json());
     state.settings = fresh;
@@ -425,17 +434,7 @@ async function renderPayment() {
 
   const s = state.settings || {};
 
-  document.getElementById('payment-summary').innerHTML = `
-    <h3 style="font-family:'Cormorant Garamond',serif;font-size:20px;color:var(--cream);margin-bottom:16px">Récapitulatif</h3>
-    ${state.cart.map(i => `
-      <div class="summary-line">
-        <span>${escHtml(i.name)} × ${i.qty}</span>
-        <span>${(i.price * i.qty).toLocaleString('fr-FR')} $</span>
-      </div>`).join('')}
-    <div class="summary-total">
-      <span>Total à Virer</span>
-      <span>${total.toLocaleString('fr-FR')} $</span>
-    </div>`;
+  renderPaymentSummary();
 
   if (state.currentUser) {
     document.getElementById('delivery-address').value = state.currentUser.address || '';
@@ -500,13 +499,15 @@ async function submitOrder() {
   if (!address) { showToast('Adresse de livraison requise', 'error'); return; }
   if (state.cart.length === 0) { showToast('Panier vide', 'error'); return; }
 
-  const total = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const baseTotal = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const total     = state.activePromo ? state.activePromo.finalTotal : baseTotal;
   const order = {
-    customer : state.currentUser.name,
-    items    : state.cart,
+    customer  : state.currentUser.name,
+    items     : state.cart,
     total,
-    proofUrl : state.proofUrl,
+    proofUrl  : state.proofUrl,
     address,
+    promoCode : state.activePromo ? state.activePromo.code : undefined,
   };
 
   const btn = document.querySelector('#page-payment .btn-primary.btn-full');
@@ -620,27 +621,170 @@ async function listenSettings() {
 
 function loadSettings() {
   const s = state.settings || {};
-  document.getElementById('s-bank-name').value    = s.bankName    || '';
-  document.getElementById('s-bank-account').value = s.bankAccount || '';
-  document.getElementById('s-bank-holder').value  = s.bankHolder  || '';
-  document.getElementById('s-bank-mobile').value  = s.bankMobile  || '';
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('s-bank-name',      s.bankName);
+  set('s-bank-account',   s.bankAccount);
+  set('s-bank-holder',    s.bankHolder);
+  set('s-bank-mobile',    s.bankMobile);
+  set('s-site-name',      s.siteName);
+  set('s-site-motto',     s.siteMotto);
+  set('s-site-address',   s.siteAddress);
+  set('s-site-phone',     s.sitePhone);
+  set('s-site-email',     s.siteEmail);
+  set('s-site-whatsapp',  s.siteWhatsapp);
+  set('s-site-instagram', s.siteInstagram);
+  set('s-site-facebook',  s.siteFacebook);
+  renderAdminPromoCodes();
 }
 
 async function saveSettings() {
+  const get = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   const settings = {
-    bankName   : document.getElementById('s-bank-name').value.trim(),
-    bankAccount: document.getElementById('s-bank-account').value.trim(),
-    bankHolder : document.getElementById('s-bank-holder').value.trim(),
-    bankMobile : document.getElementById('s-bank-mobile').value.trim(),
+    bankName   : get('s-bank-name'),
+    bankAccount: get('s-bank-account'),
+    bankHolder : get('s-bank-holder'),
+    bankMobile : get('s-bank-mobile'),
+    siteName   : get('s-site-name'),
+    siteMotto  : get('s-site-motto'),
+    siteAddress: get('s-site-address'),
+    sitePhone  : get('s-site-phone'),
+    siteEmail  : get('s-site-email'),
+    siteWhatsapp : get('s-site-whatsapp'),
+    siteInstagram: get('s-site-instagram'),
+    siteFacebook : get('s-site-facebook'),
   };
   try {
     const res = await fetch('/api/settings', {
       method: 'POST', headers: adminHeaders(), body: JSON.stringify(settings)
     });
     if (!res.ok) { showToast('Erreur sauvegarde', 'error'); return; }
-    state.settings = settings;
-    showToast('Paramètres sauvegardés', 'success');
+    state.settings = { ...state.settings, ...settings };
+    showToast('Paramètres sauvegardés ✓', 'success');
   } catch { showToast('Erreur sauvegarde', 'error'); }
+}
+
+// ════════════════════════════════════════════════════════════
+//  CODES PROMO — Admin
+// ════════════════════════════════════════════════════════════
+async function renderAdminPromoCodes() {
+  const box = document.getElementById('admin-promo-list');
+  if (!box) return;
+  try {
+    const res = await fetch('/api/promo-codes', { headers: adminHeaders() });
+    if (!res.ok) return;
+    state.promoCodes = await res.json();
+  } catch { return; }
+  if (!state.promoCodes.length) {
+    box.innerHTML = `<p style="color:var(--text-dim);font-size:13px;padding:16px 0">Aucun code promo créé</p>`;
+    return;
+  }
+  box.innerHTML = `
+    <table class="admin-table" style="margin-top:8px">
+      <thead><tr>
+        <th>Code</th><th>Type</th><th>Valeur</th><th>Utilisations</th><th>Statut</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${state.promoCodes.map(p => `
+        <tr>
+          <td><strong style="color:var(--gold);letter-spacing:2px">${escHtml(p.code)}</strong></td>
+          <td style="color:var(--text-dim)">${p.discount_type === 'percent' ? 'Pourcentage' : 'Fixe'}</td>
+          <td style="color:var(--cream)">${p.discount_value}${p.discount_type === 'percent' ? '%' : ' $'}</td>
+          <td style="color:var(--text-dim)">${p.used_count}${p.max_uses ? ' / ' + p.max_uses : ' / ∞'}</td>
+          <td><span style="padding:3px 12px;font-size:10px;letter-spacing:2px;${p.active
+            ? 'background:rgba(39,174,96,0.12);color:var(--green);border:1px solid rgba(39,174,96,0.3)'
+            : 'background:rgba(192,57,43,0.12);color:var(--red);border:1px solid rgba(192,57,43,0.3)'}">
+            ${p.active ? 'ACTIF' : 'INACTIF'}</span></td>
+          <td style="display:flex;gap:8px">
+            <button class="action-btn btn-update" onclick="togglePromoCode(${p.id})">${p.active ? 'Désactiver' : 'Activer'}</button>
+            <button class="action-btn btn-danger" onclick="deletePromoCode(${p.id})">Supprimer</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function createPromoCode() {
+  const code     = (document.getElementById('promo-code-input')?.value || '').trim().toUpperCase();
+  const type     = document.getElementById('promo-type')?.value || 'percent';
+  const value    = parseInt(document.getElementById('promo-value')?.value || '0');
+  const maxUses  = parseInt(document.getElementById('promo-max-uses')?.value || '0') || null;
+  if (!code)    { showToast('Entrez un code', 'error'); return; }
+  if (!value)   { showToast('Entrez une valeur de réduction', 'error'); return; }
+  try {
+    const res = await fetch('/api/promo-codes', {
+      method: 'POST', headers: adminHeaders(),
+      body: JSON.stringify({ code, discount_type: type, discount_value: value, max_uses: maxUses })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Erreur', 'error'); return; }
+    showToast('Code promo créé : ' + code, 'success');
+    document.getElementById('promo-code-input').value = '';
+    document.getElementById('promo-value').value = '';
+    document.getElementById('promo-max-uses').value = '';
+    renderAdminPromoCodes();
+  } catch { showToast('Erreur réseau', 'error'); }
+}
+
+async function togglePromoCode(id) {
+  try {
+    await fetch('/api/promo-codes/' + id + '/toggle', { method: 'PATCH', headers: adminHeaders() });
+    renderAdminPromoCodes();
+  } catch { showToast('Erreur', 'error'); }
+}
+
+async function deletePromoCode(id) {
+  if (!confirm('Supprimer ce code promo ?')) return;
+  try {
+    await fetch('/api/promo-codes/' + id, { method: 'DELETE', headers: adminHeaders() });
+    showToast('Code supprimé', 'info');
+    renderAdminPromoCodes();
+  } catch { showToast('Erreur', 'error'); }
+}
+
+// ════════════════════════════════════════════════════════════
+//  CODES PROMO — Client (checkout)
+// ════════════════════════════════════════════════════════════
+async function applyPromoCode() {
+  const code = (document.getElementById('promo-apply-input')?.value || '').trim().toUpperCase();
+  const resultBox = document.getElementById('promo-result');
+  if (!code) { showToast('Entrez un code promo', 'error'); return; }
+  const total = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
+  try {
+    const res  = await fetch('/api/promo-codes/apply', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, total })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      state.activePromo = null;
+      resultBox.innerHTML = `<span style="color:var(--red)">${escHtml(data.error)}</span>`;
+      renderPaymentSummary();
+      return;
+    }
+    state.activePromo = data;
+    resultBox.innerHTML = `<span style="color:var(--green)">✓ Code appliqué — Réduction : ${data.discount.toLocaleString('fr-FR')} $ | Nouveau total : <strong>${data.finalTotal.toLocaleString('fr-FR')} $</strong></span>`;
+    renderPaymentSummary();
+  } catch { resultBox.innerHTML = `<span style="color:var(--red)">Erreur réseau</span>`; }
+}
+
+function renderPaymentSummary() {
+  const promo = state.activePromo;
+  const baseTotal = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
+  document.getElementById('payment-summary').innerHTML = `
+    <h3 style="font-family:'Cormorant Garamond',serif;font-size:20px;color:var(--cream);margin-bottom:16px">Récapitulatif</h3>
+    ${state.cart.map(i => `
+      <div class="summary-line">
+        <span>${escHtml(i.name)} × ${i.qty}</span>
+        <span>${(i.price * i.qty).toLocaleString('fr-FR')} $</span>
+      </div>`).join('')}
+    ${promo ? `
+      <div class="summary-line" style="color:var(--green)">
+        <span>Code promo (${escHtml(promo.code)})</span>
+        <span>− ${promo.discount.toLocaleString('fr-FR')} $</span>
+      </div>` : ''}
+    <div class="summary-total">
+      <span>Total à Virer</span>
+      <span>${(promo ? promo.finalTotal : baseTotal).toLocaleString('fr-FR')} $</span>
+    </div>`;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1086,6 +1230,23 @@ function renderProfile() {
   ['profile-pwd-current','profile-pwd-new','profile-pwd-confirm'].forEach(id => {
     const f = el(id); if (f) f.value = '';
   });
+  // Contacts de la boutique
+  const contactsSection = el('profile-contacts-section');
+  const contactsContent = el('profile-contacts-content');
+  const s = state.settings || {};
+  const hasContacts = s.sitePhone || s.siteEmail || s.siteWhatsapp || s.siteInstagram || s.siteFacebook || s.siteAddress;
+  if (contactsSection) contactsSection.style.display = hasContacts ? '' : 'none';
+  if (contactsContent && hasContacts) {
+    const rows = [
+      s.sitePhone     && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.59 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg><a href="tel:${escHtml(s.sitePhone)}" style="color:var(--text-dim);text-decoration:none">${escHtml(s.sitePhone)}</a></div>`,
+      s.siteWhatsapp  && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><a href="https://wa.me/${s.siteWhatsapp.replace(/\D/g,'')}" target="_blank" style="color:var(--text-dim);text-decoration:none">${escHtml(s.siteWhatsapp)}</a></div>`,
+      s.siteEmail     && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><a href="mailto:${escHtml(s.siteEmail)}" style="color:var(--text-dim);text-decoration:none">${escHtml(s.siteEmail)}</a></div>`,
+      s.siteInstagram && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg><span style="color:var(--text-dim)">${escHtml(s.siteInstagram)}</span></div>`,
+      s.siteFacebook  && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg><span style="color:var(--text-dim)">${escHtml(s.siteFacebook)}</span></div>`,
+      s.siteAddress   && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span style="color:var(--text-dim)">${escHtml(s.siteAddress)}</span></div>`,
+    ].filter(Boolean);
+    contactsContent.innerHTML = rows.join('');
+  }
 }
 
 async function saveProfileName() {

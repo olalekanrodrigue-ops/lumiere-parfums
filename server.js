@@ -212,6 +212,16 @@ async function initDatabase() {
       );
       INSERT INTO settings (id, "bankName", "bankAccount", "bankHolder", "bankMobile")
       VALUES (1, '', '', '', '') ON CONFLICT (id) DO NOTHING;
+      CREATE TABLE IF NOT EXISTS promo_codes (
+        id             SERIAL PRIMARY KEY,
+        code           VARCHAR(50) UNIQUE NOT NULL,
+        discount_type  VARCHAR(20) NOT NULL DEFAULT 'percent',
+        discount_value INTEGER NOT NULL DEFAULT 0,
+        max_uses       INTEGER,
+        used_count     INTEGER NOT NULL DEFAULT 0,
+        active         BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at     TIMESTAMPTZ DEFAULT NOW()
+      );
       CREATE TABLE IF NOT EXISTS admins (
         id       SERIAL PRIMARY KEY,
         username VARCHAR(100) UNIQUE NOT NULL,
@@ -596,8 +606,9 @@ app.post('/api/orders', authenticateUser, [
   body('address').trim().notEmpty().isLength({ max: 1000 }),
   body('items').isArray({ min: 1 }),
   body('proofUrl').notEmpty().withMessage('Preuve de paiement requise'),
+  body('promoCode').optional().trim().isLength({ max: 50 }),
 ], validate, async (req, res) => {
-  const { customer, items = [], total, address, proofUrl } = req.body;
+  const { customer, items = [], total, address, proofUrl, promoCode } = req.body;
   const userId      = req.user.email;
   const id          = genOrderId();
   const trackingCode = genTrackingCode();
@@ -647,14 +658,31 @@ app.delete('/api/orders/:id', authenticateAdmin, [
 
 
 // ════════════════════════════════════════════════════════════
-//  PARAMÈTRES BANCAIRES
+//  PARAMÈTRES BOUTIQUE
 // ════════════════════════════════════════════════════════════
+
+// Migration : ajout des nouvelles colonnes si elles n'existent pas encore
+async function migrateSettingsColumns() {
+  const cols = [
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteName"     VARCHAR(255) DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteMotto"    VARCHAR(500) DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "sitePhone"    VARCHAR(100) DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteEmail"    VARCHAR(255) DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteWhatsapp" VARCHAR(100) DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteInstagram"VARCHAR(255) DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteFacebook" VARCHAR(255) DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteAddress"  TEXT         DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "bankMobile"   VARCHAR(50)  DEFAULT ''`,
+  ];
+  for (const sql of cols) {
+    try { await pool.query(sql); } catch (_) {}
+  }
+}
 
 app.get('/api/settings', async (_req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT "bankName", "bankAccount", "bankHolder", "bankMobile" FROM settings WHERE id=1`
-    );
+    await migrateSettingsColumns();
+    const { rows } = await pool.query(`SELECT * FROM settings WHERE id=1`);
     res.json(rows[0] || {});
   } catch (err) {
     console.error(err);
@@ -667,18 +695,36 @@ app.post('/api/settings', authenticateAdmin, [
   body('bankAccount').optional().trim().isLength({ max: 255 }),
   body('bankHolder').optional().trim().isLength({ max: 255 }),
   body('bankMobile').optional().trim().isLength({ max: 50 }),
+  body('siteName').optional().trim().isLength({ max: 255 }),
+  body('siteMotto').optional().trim().isLength({ max: 500 }),
+  body('sitePhone').optional().trim().isLength({ max: 100 }),
+  body('siteEmail').optional().trim().isLength({ max: 255 }),
+  body('siteWhatsapp').optional().trim().isLength({ max: 100 }),
+  body('siteInstagram').optional().trim().isLength({ max: 255 }),
+  body('siteFacebook').optional().trim().isLength({ max: 255 }),
+  body('siteAddress').optional().trim().isLength({ max: 1000 }),
 ], validate, async (req, res) => {
-  const { bankName, bankAccount, bankHolder, bankMobile } = req.body;
+  const {
+    bankName, bankAccount, bankHolder, bankMobile,
+    siteName, siteMotto, sitePhone, siteEmail,
+    siteWhatsapp, siteInstagram, siteFacebook, siteAddress,
+  } = req.body;
   try {
+    await migrateSettingsColumns();
     await pool.query(
-      `INSERT INTO settings (id, "bankName", "bankAccount", "bankHolder", "bankMobile")
-       VALUES (1,$1,$2,$3,$4)
+      `INSERT INTO settings (id,"bankName","bankAccount","bankHolder","bankMobile",
+        "siteName","siteMotto","sitePhone","siteEmail","siteWhatsapp","siteInstagram","siteFacebook","siteAddress")
+       VALUES (1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (id) DO UPDATE SET
-         "bankName"=EXCLUDED."bankName",
-         "bankAccount"=EXCLUDED."bankAccount",
-         "bankHolder"=EXCLUDED."bankHolder",
-         "bankMobile"=EXCLUDED."bankMobile"`,
-      [bankName, bankAccount, bankHolder, bankMobile]
+         "bankName"=EXCLUDED."bankName","bankAccount"=EXCLUDED."bankAccount",
+         "bankHolder"=EXCLUDED."bankHolder","bankMobile"=EXCLUDED."bankMobile",
+         "siteName"=EXCLUDED."siteName","siteMotto"=EXCLUDED."siteMotto",
+         "sitePhone"=EXCLUDED."sitePhone","siteEmail"=EXCLUDED."siteEmail",
+         "siteWhatsapp"=EXCLUDED."siteWhatsapp","siteInstagram"=EXCLUDED."siteInstagram",
+         "siteFacebook"=EXCLUDED."siteFacebook","siteAddress"=EXCLUDED."siteAddress"`,
+      [bankName||'', bankAccount||'', bankHolder||'', bankMobile||'',
+       siteName||'', siteMotto||'', sitePhone||'', siteEmail||'',
+       siteWhatsapp||'', siteInstagram||'', siteFacebook||'', siteAddress||'']
     );
     res.json({ ok: true });
   } catch (err) {
@@ -686,6 +732,111 @@ app.post('/api/settings', authenticateAdmin, [
     res.status(500).json({ error: 'Erreur sauvegarde paramètres' });
   }
 });
+
+// ════════════════════════════════════════════════════════════
+//  CODES PROMO
+// ════════════════════════════════════════════════════════════
+
+app.get('/api/promo-codes', authenticateAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM promo_codes ORDER BY created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur chargement codes promo' });
+  }
+});
+
+app.post('/api/promo-codes', authenticateAdmin, [
+  body('code').trim().notEmpty().isLength({ max: 50 }),
+  body('discount_type').isIn(['percent', 'fixed']),
+  body('discount_value').isInt({ min: 1 }),
+  body('max_uses').optional({ nullable: true }).isInt({ min: 1 }),
+], validate, async (req, res) => {
+  const { code, discount_type, discount_value, max_uses } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO promo_codes (code, discount_type, discount_value, max_uses)
+       VALUES ($1,$2,$3,$4) RETURNING *`,
+      [code.toUpperCase(), discount_type, discount_value, max_uses || null]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Ce code existe déjà' });
+    console.error(err);
+    res.status(500).json({ error: 'Erreur création code promo' });
+  }
+});
+
+app.patch('/api/promo-codes/:id/toggle', authenticateAdmin, [
+  param('id').isInt(),
+], validate, async (req, res) => {
+  try {
+    await pool.query(
+      `UPDATE promo_codes SET active = NOT active WHERE id=$1`, [req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur mise à jour code' });
+  }
+});
+
+app.delete('/api/promo-codes/:id', authenticateAdmin, [
+  param('id').isInt(),
+], validate, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM promo_codes WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur suppression code promo' });
+  }
+});
+
+app.post('/api/promo-codes/apply', [
+  body('code').trim().notEmpty().isLength({ max: 50 }),
+  body('total').isInt({ min: 1 }),
+], validate, async (req, res) => {
+  const { code, total } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM promo_codes WHERE code=$1 AND active=TRUE`,
+      [code.toUpperCase()]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Code promo invalide ou désactivé' });
+    const promo = rows[0];
+    if (promo.max_uses !== null && promo.used_count >= promo.max_uses) {
+      return res.status(400).json({ error: 'Ce code promo a atteint sa limite d\'utilisation' });
+    }
+    const discount = promo.discount_type === 'percent'
+      ? Math.round(total * promo.discount_value / 100)
+      : Math.min(promo.discount_value, total);
+    const finalTotal = Math.max(0, total - discount);
+    res.json({
+      code: promo.code,
+      discount_type: promo.discount_type,
+      discount_value: promo.discount_value,
+      discount,
+      finalTotal,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur validation code promo' });
+  }
+});
+
+// Incrément usage lors d'une commande confirmée (appelé en interne)
+async function incrementPromoUsage(code) {
+  if (!code) return;
+  try {
+    await pool.query(
+      `UPDATE promo_codes SET used_count = used_count + 1 WHERE code=$1`, [code]
+    );
+  } catch (_) {}
+}
 
 
 // ════════════════════════════════════════════════════════════
