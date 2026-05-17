@@ -39,7 +39,7 @@ let state = {
   activePromo    : null,   // { code, discount, finalTotal }
   settings       : { bankName:'', bankAccount:'', bankHolder:'', bankMobile:'',
                      siteName:'', siteMotto:'', sitePhone:'', siteEmail:'',
-                     siteWhatsapp:'', siteInstagram:'', siteFacebook:'', siteAddress:'' },
+                     siteWhatsapp:'', siteInstagram:'', siteFacebook:'', siteAddress:'', siteTiktok:'' },
   currentEditProductId : null,
   currentUpdateOrderId : null,
 };
@@ -96,7 +96,7 @@ function adminHeaders() {
 // ── Init ──────────────────────────────────────────────────────
 window.onload = () => {
   loadState();
-  applyI18n();
+  initI18n();
   listenProducts();
   listenOrders();
   listenSettings();
@@ -634,6 +634,7 @@ function loadSettings() {
   set('s-site-whatsapp',  s.siteWhatsapp);
   set('s-site-instagram', s.siteInstagram);
   set('s-site-facebook',  s.siteFacebook);
+  set('s-site-tiktok',    s.siteTiktok);
   renderAdminPromoCodes();
 }
 
@@ -652,6 +653,7 @@ async function saveSettings() {
     siteWhatsapp : get('s-site-whatsapp'),
     siteInstagram: get('s-site-instagram'),
     siteFacebook : get('s-site-facebook'),
+    siteTiktok   : get('s-site-tiktok'),
   };
   try {
     const res = await fetch('/api/settings', {
@@ -1211,21 +1213,57 @@ function renderProfile() {
   const u = state.currentUser;
   const initials = u.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const el = id => document.getElementById(id);
-  if (el('profile-avatar'))       el('profile-avatar').textContent = initials;
+
+  // Avatar — photo ou initiales
+  const avatarEl = el('profile-avatar');
+  if (avatarEl) {
+    if (u.photoUrl) {
+      avatarEl.innerHTML = `<img src="${escHtml(u.photoUrl)}" alt="Photo de profil">`;
+    } else {
+      avatarEl.textContent = initials;
+    }
+  }
+
   if (el('profile-name-display')) el('profile-name-display').textContent = u.name;
   if (el('profile-email-display'))el('profile-email-display').textContent = u.email;
   if (el('profile-name-input'))   el('profile-name-input').value = u.name;
-  // Résumé commandes
+
+  // Commandes validées uniquement (confirmed, shipping, delivered)
+  const validatedOrders = state.orders.filter(o =>
+    ['confirmed','shipping','delivered'].includes(o.status)
+  );
   const box = el('profile-orders-summary');
   if (box) {
-    const total = state.orders.length;
-    const pending = state.orders.filter(o => o.status === 'pending').length;
-    const delivered = state.orders.filter(o => o.status === 'delivered').length;
-    box.innerHTML = total === 0
-      ? '<span>Aucune commande pour le moment</span>'
-      : `<span style="color:var(--gold);font-family:\'Cormorant Garamond\',serif;font-size:28px">${total}</span>
-         <span style="display:block;font-size:11px;letter-spacing:2px;margin-top:4px">commande${total>1?'s':''} • ${pending} en attente • ${delivered} livré${delivered>1?'s':''}</span>`;
+    if (validatedOrders.length === 0) {
+      box.innerHTML = '<span>Aucune commande validée pour le moment</span>';
+    } else {
+      const delivered = validatedOrders.filter(o => o.status === 'delivered').length;
+      const shipping  = validatedOrders.filter(o => o.status === 'shipping').length;
+      box.innerHTML = `
+        <span style="color:var(--gold);font-family:'Cormorant Garamond',serif;font-size:28px">${validatedOrders.length}</span>
+        <span style="display:block;font-size:11px;letter-spacing:2px;margin-top:4px">
+          commande${validatedOrders.length>1?'s':''} validée${validatedOrders.length>1?'s':''}
+          ${shipping  ? ` · ${shipping} en livraison`  : ''}
+          ${delivered ? ` · ${delivered} livrée${delivered>1?'s':''}` : ''}
+        </span>
+        <div style="margin-top:16px;border-top:1px solid rgba(201,169,110,0.1);padding-top:12px">
+          ${validatedOrders.slice(0,3).map(o => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(201,169,110,0.06);font-size:12px">
+              <span style="color:var(--text-dim)">${o.trackingCode || o.id}</span>
+              <span style="color:var(--cream)">${(o.total||0).toLocaleString('fr-FR')} $</span>
+              <span style="padding:2px 8px;font-size:9px;letter-spacing:2px;${
+                o.status==='delivered' ? 'color:var(--green);border:1px solid rgba(39,174,96,0.4)' :
+                o.status==='shipping'  ? 'color:var(--blue);border:1px solid rgba(41,128,185,0.4)' :
+                                         'color:var(--gold);border:1px solid rgba(201,169,110,0.3)'
+              }">${
+                o.status==='delivered' ? 'LIVRÉ' :
+                o.status==='shipping'  ? 'EN COURS' : 'CONFIRMÉ'
+              }</span>
+            </div>`).join('')}
+        </div>`;
+    }
   }
+
   // Clear password fields
   ['profile-pwd-current','profile-pwd-new','profile-pwd-confirm'].forEach(id => {
     const f = el(id); if (f) f.value = '';
@@ -1243,9 +1281,35 @@ function renderProfile() {
       s.siteEmail     && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><a href="mailto:${escHtml(s.siteEmail)}" style="color:var(--text-dim);text-decoration:none">${escHtml(s.siteEmail)}</a></div>`,
       s.siteInstagram && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg><span style="color:var(--text-dim)">${escHtml(s.siteInstagram)}</span></div>`,
       s.siteFacebook  && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg><span style="color:var(--text-dim)">${escHtml(s.siteFacebook)}</span></div>`,
+      s.siteTiktok    && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg><span style="color:var(--text-dim)">${escHtml(s.siteTiktok)}</span></div>`,
       s.siteAddress   && `<div style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span style="color:var(--text-dim)">${escHtml(s.siteAddress)}</span></div>`,
     ].filter(Boolean);
     contactsContent.innerHTML = rows.join('');
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  PHOTO DE PROFIL
+// ════════════════════════════════════════════════════════════
+async function handleAvatarUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { showToast('Image trop lourde (max 5 Mo)', 'error'); return; }
+  showToast('Envoi de la photo…', 'info');
+  try {
+    const dataUri = await readFileAsDataUrl(file);
+    const url     = await uploadProofToCloud(dataUri);
+    const res = await fetch('/api/auth/photo', {
+      method: 'PATCH', headers: userHeaders(),
+      body: JSON.stringify({ photoUrl: url }),
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Erreur'); }
+    state.currentUser.photoUrl = url;
+    saveState();
+    renderProfile();
+    showToast('Photo de profil mise à jour', 'success');
+  } catch (err) {
+    showToast('Erreur : ' + err.message, 'error');
   }
 }
 
@@ -1324,10 +1388,29 @@ const I18N = {
   },
 };
 
-function applyI18n() {
-  const lang = (navigator.language || 'fr').slice(0, 2).toLowerCase();
+// Détection de langue par IP (via proxy backend — évite les CORS)
+async function detectLangFromIP() {
+  try {
+    const res  = await fetch('/api/geoip');
+    const data = await res.json();
+    const map  = {
+      US:'en', GB:'en', AU:'en', CA:'en', NZ:'en', IE:'en', JM:'en', GH:'en', NG:'en', ZA:'en', KE:'en',
+      FR:'fr', BE:'fr', CH:'fr', LU:'fr', ML:'fr', SN:'fr', CI:'fr', TG:'fr', BJ:'fr', CM:'fr', GN:'fr', BF:'fr', NE:'fr', RW:'fr', GA:'fr', CD:'fr', MG:'fr', BI:'fr',
+      ES:'es', MX:'es', AR:'es', CO:'es', PE:'es', VE:'es', CL:'es', EC:'es', BO:'es', DO:'es', GT:'es', CU:'es',
+      BR:'pt', PT:'pt', AO:'pt', MZ:'pt', CV:'pt',
+      SA:'ar', MA:'ar', DZ:'ar', TN:'ar', EG:'ar', AE:'ar', LB:'ar', JO:'ar', KW:'ar',
+      DE:'de', AT:'de',
+    };
+    return map[data.country_code] || (navigator.language || 'fr').slice(0,2).toLowerCase();
+  } catch {
+    return (navigator.language || 'fr').slice(0, 2).toLowerCase();
+  }
+}
+
+function applyI18n(forceLang) {
+  const lang = forceLang || (navigator.language || 'fr').slice(0, 2).toLowerCase();
   const t = I18N[lang];
-  if (!t) return; // French is default — no translation needed
+  if (!t) return;
   if (lang === 'ar') {
     document.documentElement.setAttribute('dir', 'rtl');
     document.documentElement.setAttribute('lang', 'ar');
@@ -1336,6 +1419,11 @@ function applyI18n() {
     const key = el.dataset.i18n;
     if (t[key]) el.textContent = t[key];
   });
+}
+
+async function initI18n() {
+  const lang = await detectLangFromIP();
+  applyI18n(lang);
 }
 
 // ════════════════════════════════════════════════════════════

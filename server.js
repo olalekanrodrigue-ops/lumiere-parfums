@@ -53,6 +53,7 @@ app.use(helmet({
       fontSrc       : ["'self'", 'https://fonts.gstatic.com'],
       imgSrc        : ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com'],
       mediaSrc      : ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com'],
+      connectSrc    : ["'self'", 'https://res.cloudinary.com'],
     },
   },
   crossOriginEmbedderPolicy: false,
@@ -397,8 +398,9 @@ app.post('/api/login', authLimiter, [
 ], validate, async (req, res) => {
   const { email, password } = req.body;
   try {
+    await migrateCustomersColumns();
     const { rows } = await pool.query(
-      'SELECT email, name, phone, address, password AS hash FROM customers WHERE email=$1',
+      'SELECT email, name, phone, address, photo_url, password AS hash FROM customers WHERE email=$1',
       [email]
     );
     if (rows.length === 0) return res.status(401).json({ error: 'Identifiants incorrects' });
@@ -414,13 +416,20 @@ app.post('/api/login', authLimiter, [
       await pool.query('UPDATE customers SET password=$1 WHERE email=$2', [h, email]);
     }
     const token = jwt.sign({ email: user.email, name: user.name, role: 'customer' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-    res.json({ ok: true, token, user: { email: user.email, name: user.name, phone: user.phone, address: user.address } });
+    res.json({ ok: true, token, user: { email: user.email, name: user.name, phone: user.phone, address: user.address, photoUrl: user.photo_url || null } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
+
+// ── Migration photo_url ──────────────────────────────────────
+async function migrateCustomersColumns() {
+  try {
+    await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS photo_url TEXT`);
+  } catch (_) {}
+}
 
 // ── Modifier le profil (nom) ──────────────────────────────────
 app.patch('/api/auth/profile', authenticateUser, [
@@ -431,8 +440,23 @@ app.patch('/api/auth/profile', authenticateUser, [
     await pool.query('UPDATE customers SET name=$1 WHERE email=$2', [name, req.user.email]);
     res.json({ ok: true });
   } catch (err) {
-    req.log.error(err);
+    console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ── Modifier la photo de profil ───────────────────────────────
+app.patch('/api/auth/photo', authenticateUser, [
+  body('photoUrl').trim().notEmpty().isURL().withMessage('URL valide requise'),
+], validate, async (req, res) => {
+  const { photoUrl } = req.body;
+  try {
+    await migrateCustomersColumns();
+    await pool.query('UPDATE customers SET photo_url=$1 WHERE email=$2', [photoUrl, req.user.email]);
+    res.json({ ok: true, photoUrl });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur mise à jour photo' });
   }
 });
 
@@ -673,6 +697,7 @@ async function migrateSettingsColumns() {
     `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteFacebook" VARCHAR(255) DEFAULT ''`,
     `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteAddress"  TEXT         DEFAULT ''`,
     `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "bankMobile"   VARCHAR(50)  DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "siteTiktok"  VARCHAR(255) DEFAULT ''`,
   ];
   for (const sql of cols) {
     try { await pool.query(sql); } catch (_) {}
@@ -703,28 +728,30 @@ app.post('/api/settings', authenticateAdmin, [
   body('siteInstagram').optional().trim().isLength({ max: 255 }),
   body('siteFacebook').optional().trim().isLength({ max: 255 }),
   body('siteAddress').optional().trim().isLength({ max: 1000 }),
+  body('siteTiktok').optional().trim().isLength({ max: 255 }),
 ], validate, async (req, res) => {
   const {
     bankName, bankAccount, bankHolder, bankMobile,
     siteName, siteMotto, sitePhone, siteEmail,
-    siteWhatsapp, siteInstagram, siteFacebook, siteAddress,
+    siteWhatsapp, siteInstagram, siteFacebook, siteAddress, siteTiktok,
   } = req.body;
   try {
     await migrateSettingsColumns();
     await pool.query(
       `INSERT INTO settings (id,"bankName","bankAccount","bankHolder","bankMobile",
-        "siteName","siteMotto","sitePhone","siteEmail","siteWhatsapp","siteInstagram","siteFacebook","siteAddress")
-       VALUES (1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        "siteName","siteMotto","sitePhone","siteEmail","siteWhatsapp","siteInstagram","siteFacebook","siteAddress","siteTiktok")
+       VALUES (1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT (id) DO UPDATE SET
          "bankName"=EXCLUDED."bankName","bankAccount"=EXCLUDED."bankAccount",
          "bankHolder"=EXCLUDED."bankHolder","bankMobile"=EXCLUDED."bankMobile",
          "siteName"=EXCLUDED."siteName","siteMotto"=EXCLUDED."siteMotto",
          "sitePhone"=EXCLUDED."sitePhone","siteEmail"=EXCLUDED."siteEmail",
          "siteWhatsapp"=EXCLUDED."siteWhatsapp","siteInstagram"=EXCLUDED."siteInstagram",
-         "siteFacebook"=EXCLUDED."siteFacebook","siteAddress"=EXCLUDED."siteAddress"`,
+         "siteFacebook"=EXCLUDED."siteFacebook","siteAddress"=EXCLUDED."siteAddress",
+         "siteTiktok"=EXCLUDED."siteTiktok"`,
       [bankName||'', bankAccount||'', bankHolder||'', bankMobile||'',
        siteName||'', siteMotto||'', sitePhone||'', siteEmail||'',
-       siteWhatsapp||'', siteInstagram||'', siteFacebook||'', siteAddress||'']
+       siteWhatsapp||'', siteInstagram||'', siteFacebook||'', siteAddress||'', siteTiktok||'']
     );
     res.json({ ok: true });
   } catch (err) {
@@ -842,6 +869,27 @@ async function incrementPromoUsage(code) {
 // ════════════════════════════════════════════════════════════
 //  VIDÉOS
 // ════════════════════════════════════════════════════════════
+
+// Géolocalisation IP — proxy vers ipapi.co (évite les CORS côté client)
+app.get('/api/geoip', async (req, res) => {
+  try {
+    const https = require('https');
+    const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || '';
+    const url = ip && !ip.startsWith('127.') && !ip.startsWith('::')
+      ? `https://ipapi.co/${ip}/json/`
+      : 'https://ipapi.co/json/';
+    const data = await new Promise((resolve, reject) => {
+      https.get(url, { headers: { 'User-Agent': 'lumiere-app/1.0' } }, r => {
+        let body = '';
+        r.on('data', chunk => body += chunk);
+        r.on('end', () => { try { resolve(JSON.parse(body)); } catch { reject(new Error('parse')); } });
+      }).on('error', reject);
+    });
+    res.json({ country_code: data.country_code || null });
+  } catch {
+    res.json({ country_code: null });
+  }
+});
 
 app.get('/api/videos', async (_req, res) => {
   try {

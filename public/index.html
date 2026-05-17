@@ -423,12 +423,62 @@ nav {
 /* ===== PROFIL UTILISATEUR ===== */
 .profile-page { max-width: 520px; margin: 0 auto; padding: 60px 20px 40px; }
 .profile-avatar {
-  width: 88px; height: 88px; border-radius: 50%;
+  width: 96px; height: 96px; border-radius: 50%;
   background: linear-gradient(135deg, rgba(201,169,110,0.25) 0%, rgba(201,169,110,0.08) 100%);
   border: 2px solid rgba(201,169,110,0.5);
   display: flex; align-items: center; justify-content: center;
   font-family: 'Cormorant Garamond', serif; font-size: 36px; color: var(--gold);
   margin: 0 auto 24px; letter-spacing: 2px;
+  cursor: pointer; position: relative; overflow: hidden;
+  transition: border-color 0.3s;
+}
+.profile-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; position:absolute; inset:0; }
+.profile-avatar:hover { border-color: var(--gold); }
+.profile-avatar:hover::after {
+  content: '📷'; position: absolute; inset: 0; background: rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; border-radius: 50%;
+}
+.profile-avatar-wrap { position:relative; width:96px; margin:0 auto 24px; cursor:pointer; }
+.profile-avatar-wrap .avatar-edit-hint {
+  position: absolute; bottom: -2px; right: -2px;
+  background: var(--gold); border-radius: 50%; width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--dark);
+}
+/* Collection banner */
+.collection-banner {
+  position: relative; overflow: hidden;
+  background-image: url('/hero-perfumes.png');
+  background-size: cover; background-position: center 60%;
+  padding: 80px 40px; text-align: center;
+}
+.collection-banner::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(13,10,7,0.88) 0%, rgba(60,15,85,0.6) 100%);
+}
+.collection-banner-inner { position: relative; z-index: 1; }
+.collection-banner-tag {
+  font-size: 10px; letter-spacing: 6px; text-transform: uppercase;
+  color: var(--gold); margin-bottom: 16px; display: flex; align-items: center;
+  justify-content: center; gap: 12px;
+}
+.collection-banner-tag::before, .collection-banner-tag::after {
+  content: ''; display: inline-block; width: 40px; height: 1px; background: var(--gold); opacity: 0.5;
+}
+.collection-banner h2 {
+  font-family: 'Cormorant Garamond', serif; font-size: clamp(28px,5vw,52px);
+  font-weight: 300; color: var(--cream); margin-bottom: 12px; line-height: 1.1;
+}
+.collection-banner p {
+  font-size: 13px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: 28px;
+}
+/* Promo code responsive */
+.promo-row { display: flex; gap: 10px; }
+@media (max-width: 480px) {
+  .promo-row { flex-direction: column; }
+  .promo-row .btn-secondary { width: 100%; }
 }
 .profile-name { font-family: 'Cormorant Garamond', serif; font-size: 32px; color: var(--cream); text-align: center; margin-bottom: 4px; }
 .profile-email { font-size: 11px; color: var(--text-dim); text-align: center; letter-spacing: 2px; margin-bottom: 48px; }
@@ -667,6 +717,16 @@ select { width:100%; background:var(--dark-3); border:1px solid rgba(201,169,110
     </div>
   </div>
 
+  <!-- COLLECTION BANNER -->
+  <div class="collection-banner">
+    <div class="collection-banner-inner">
+      <div class="collection-banner-tag">Nouvelle Collection · Été 2026</div>
+      <h2>L'art de la beauté,<br><em>sublimé</em></h2>
+      <p>Découvrez les fragrances de la saison</p>
+      <button class="btn-primary" onclick="showPage('boutique')">Explorer la Collection</button>
+    </div>
+  </div>
+
   </div>
 </div>
 
@@ -786,10 +846,10 @@ select { width:100%; background:var(--dark-3); border:1px solid rgba(201,169,110
       <!-- CODE PROMO -->
       <div style="background:var(--dark);border:1px solid rgba(201,169,110,0.2);padding:20px;margin-bottom:24px">
         <p style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Code Promo</p>
-        <div style="display:flex;gap:10px">
+        <div class="promo-row">
           <input type="text" id="promo-apply-input" placeholder="Entrez votre code promo"
             style="flex:1;background:var(--dark-2);border:1px solid rgba(201,169,110,0.2);color:var(--text);padding:10px 14px;font-family:'Jost',sans-serif;font-size:13px;outline:none;text-transform:uppercase">
-          <button class="btn-secondary" style="padding:10px 20px;font-size:10px" onclick="applyPromoCode()">Appliquer</button>
+          <button class="btn-secondary" style="padding:10px 20px;font-size:10px;white-space:nowrap" onclick="applyPromoCode()">Appliquer</button>
         </div>
         <div id="promo-result" style="margin-top:10px;font-size:12px"></div>
       </div>
@@ -835,7 +895,13 @@ select { width:100%; background:var(--dark-3); border:1px solid rgba(201,169,110
 <!-- ============ PAGE PROFIL ============ -->
 <div class="page" id="page-profile">
   <div class="profile-page">
-    <div class="profile-avatar" id="profile-avatar">?</div>
+    <div class="profile-avatar-wrap" onclick="document.getElementById('avatar-file-input').click()" title="Changer la photo de profil">
+      <div class="profile-avatar" id="profile-avatar">?</div>
+      <div class="avatar-edit-hint">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--dark)" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      </div>
+      <input type="file" id="avatar-file-input" accept="image/*" style="display:none" onchange="handleAvatarUpload(event)">
+    </div>
     <div class="profile-name" id="profile-name-display">—</div>
     <div class="profile-email" id="profile-email-display">—</div>
 
@@ -1077,7 +1143,10 @@ select { width:100%; background:var(--dark-3); border:1px solid rgba(201,169,110
             <div class="form-group"><label>WhatsApp</label><input type="tel" id="s-site-whatsapp" placeholder="+229 97 00 00 00"></div>
             <div class="form-group"><label>Instagram</label><input type="text" id="s-site-instagram" placeholder="@lumiere_parfums"></div>
           </div>
-          <div class="form-group"><label>Facebook</label><input type="text" id="s-site-facebook" placeholder="facebook.com/lumiereParfums"></div>
+          <div class="form-row">
+            <div class="form-group"><label>Facebook</label><input type="text" id="s-site-facebook" placeholder="facebook.com/lumiereParfums"></div>
+            <div class="form-group"><label>TikTok</label><input type="text" id="s-site-tiktok" placeholder="@lumiere_parfums"></div>
+          </div>
           <button class="btn-admin" onclick="saveSettings()">Enregistrer les contacts</button>
         </div>
 
