@@ -446,33 +446,26 @@ nav {
   display: flex; align-items: center; justify-content: center;
   border: 2px solid var(--dark);
 }
-/* Collection banner */
-.collection-banner {
-  position: relative; overflow: hidden;
-  background-image: url('/hero-perfumes.png');
-  background-size: cover; background-position: center 60%;
-  padding: 80px 40px; text-align: center;
+/* Footer slogan */
+.site-footer {
+  background: var(--dark); border-top: 1px solid rgba(201,169,110,0.15);
+  padding: 40px 20px; text-align: center;
 }
-.collection-banner::before {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(135deg, rgba(13,10,7,0.88) 0%, rgba(60,15,85,0.6) 100%);
+.footer-slogan {
+  font-family: 'Cormorant Garamond', serif; font-size: clamp(13px,2vw,15px);
+  color: var(--gold); letter-spacing: 6px; text-transform: uppercase;
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  margin-bottom: 14px;
 }
-.collection-banner-inner { position: relative; z-index: 1; }
-.collection-banner-tag {
-  font-size: 10px; letter-spacing: 6px; text-transform: uppercase;
-  color: var(--gold); margin-bottom: 16px; display: flex; align-items: center;
-  justify-content: center; gap: 12px;
+.footer-slogan::before, .footer-slogan::after {
+  content: ''; display: inline-block; width: 50px; height: 1px;
+  background: linear-gradient(to right, transparent, var(--gold));
+  opacity: 0.5;
 }
-.collection-banner-tag::before, .collection-banner-tag::after {
-  content: ''; display: inline-block; width: 40px; height: 1px; background: var(--gold); opacity: 0.5;
-}
-.collection-banner h2 {
-  font-family: 'Cormorant Garamond', serif; font-size: clamp(28px,5vw,52px);
-  font-weight: 300; color: var(--cream); margin-bottom: 12px; line-height: 1.1;
-}
-.collection-banner p {
-  font-size: 13px; letter-spacing: 3px; text-transform: uppercase;
-  color: var(--text-dim); margin-bottom: 28px;
+.footer-slogan::after { background: linear-gradient(to left, transparent, var(--gold)); }
+.footer-copy {
+  font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--text-dim); opacity: 0.6;
 }
 /* Promo code responsive */
 .promo-row { display: flex; gap: 10px; }
@@ -647,7 +640,7 @@ select { width:100%; background:var(--dark-3); border:1px solid rgba(201,169,110
     <a href="#" onclick="showPage('home')">Accueil</a>
     <a href="#" onclick="showPage('boutique')">Boutique</a>
     <a href="#" onclick="showPage('videos')">Vidéos</a>
-    <a href="#" onclick="requireAuth(() => showPage('tracking'))">Mon Suivi</a>
+    <a href="#" id="nav-tracking-link" onclick="showPage('tracking')" style="display:none">Mon Suivi</a>
   </div>
   <div class="nav-actions">
     <div id="nav-user-section">
@@ -717,18 +710,14 @@ select { width:100%; background:var(--dark-3); border:1px solid rgba(201,169,110
     </div>
   </div>
 
-  <!-- COLLECTION BANNER -->
-  <div class="collection-banner">
-    <div class="collection-banner-inner">
-      <div class="collection-banner-tag">Nouvelle Collection · Été 2026</div>
-      <h2>L'art de la beauté,<br><em>sublimé</em></h2>
-      <p>Découvrez les fragrances de la saison</p>
-      <button class="btn-primary" onclick="showPage('boutique')">Explorer la Collection</button>
-    </div>
-  </div>
-
   </div>
 </div>
+
+<!-- PIED DE PAGE -->
+<footer class="site-footer">
+  <div class="footer-slogan">Nouvelle Collection · Été 2026</div>
+  <div class="footer-copy">© 2026 Lumière Parfums · L'art du parfum premium</div>
+</footer>
 
 <!-- ============ PAGE VIDEOS ============ -->
 <div class="page" id="page-videos">

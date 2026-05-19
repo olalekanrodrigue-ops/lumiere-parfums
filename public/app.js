@@ -233,13 +233,23 @@ async function doRegister() {
 
 function updateNavUser() {
   const sec = document.getElementById('nav-user-section');
+  const trackLink   = document.getElementById('nav-tracking-link');
+  const mobileAuth  = document.getElementById('mobile-menu-auth-section');
+  const mobileProf  = document.getElementById('mobile-profile-link');
+
   if (state.currentUser) {
     sec.innerHTML = `
       <button class="nav-profile-btn" onclick="showPage('profile')" title="${escHtml(state.currentUser.name)}">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </button>`;
+    if (trackLink)  trackLink.style.display  = '';
+    if (mobileAuth) mobileAuth.style.display = 'none';
+    if (mobileProf) mobileProf.style.display = '';
   } else {
     sec.innerHTML = `<button class="btn-nav" onclick="showPage('auth')" data-i18n="btn-login">Connexion</button>`;
+    if (trackLink)  trackLink.style.display  = 'none';
+    if (mobileAuth) mobileAuth.style.display = '';
+    if (mobileProf) mobileProf.style.display = 'none';
   }
   // Bouton hero accueil : adapter selon connexion
   const heroBtn = document.getElementById('hero-account-btn');
@@ -1388,27 +1398,19 @@ const I18N = {
   },
 };
 
-// Détection de langue par IP (via proxy backend — évite les CORS)
+// Détection de langue — via Accept-Language du navigateur (fiable, sans API externe)
 async function detectLangFromIP() {
   try {
     const res  = await fetch('/api/geoip');
     const data = await res.json();
-    const map  = {
-      US:'en', GB:'en', AU:'en', CA:'en', NZ:'en', IE:'en', JM:'en', GH:'en', NG:'en', ZA:'en', KE:'en',
-      FR:'fr', BE:'fr', CH:'fr', LU:'fr', ML:'fr', SN:'fr', CI:'fr', TG:'fr', BJ:'fr', CM:'fr', GN:'fr', BF:'fr', NE:'fr', RW:'fr', GA:'fr', CD:'fr', MG:'fr', BI:'fr',
-      ES:'es', MX:'es', AR:'es', CO:'es', PE:'es', VE:'es', CL:'es', EC:'es', BO:'es', DO:'es', GT:'es', CU:'es',
-      BR:'pt', PT:'pt', AO:'pt', MZ:'pt', CV:'pt',
-      SA:'ar', MA:'ar', DZ:'ar', TN:'ar', EG:'ar', AE:'ar', LB:'ar', JO:'ar', KW:'ar',
-      DE:'de', AT:'de',
-    };
-    return map[data.country_code] || (navigator.language || 'fr').slice(0,2).toLowerCase();
+    return data.lang || 'fr';
   } catch {
-    return (navigator.language || 'fr').slice(0, 2).toLowerCase();
+    return 'fr';
   }
 }
 
 function applyI18n(forceLang) {
-  const lang = forceLang || (navigator.language || 'fr').slice(0, 2).toLowerCase();
+  const lang = forceLang || 'fr';
   const t = I18N[lang];
   if (!t) return;
   if (lang === 'ar') {

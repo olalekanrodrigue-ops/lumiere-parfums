@@ -870,25 +870,13 @@ async function incrementPromoUsage(code) {
 //  VIDÉOS
 // ════════════════════════════════════════════════════════════
 
-// Géolocalisation IP — proxy vers ipapi.co (évite les CORS côté client)
-app.get('/api/geoip', async (req, res) => {
-  try {
-    const https = require('https');
-    const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || '';
-    const url = ip && !ip.startsWith('127.') && !ip.startsWith('::')
-      ? `https://ipapi.co/${ip}/json/`
-      : 'https://ipapi.co/json/';
-    const data = await new Promise((resolve, reject) => {
-      https.get(url, { headers: { 'User-Agent': 'lumiere-app/1.0' } }, r => {
-        let body = '';
-        r.on('data', chunk => body += chunk);
-        r.on('end', () => { try { resolve(JSON.parse(body)); } catch { reject(new Error('parse')); } });
-      }).on('error', reject);
-    });
-    res.json({ country_code: data.country_code || null });
-  } catch {
-    res.json({ country_code: null });
-  }
+// Détection de langue — via Accept-Language du navigateur (fiable, sans API externe)
+app.get('/api/geoip', (req, res) => {
+  const accept = req.headers['accept-language'] || '';
+  const top = accept.split(',')[0].trim().toLowerCase().split(/[-_]/)[0];
+  const supported = ['en','ar','es','pt','de'];
+  const lang = supported.includes(top) ? top : null;
+  res.json({ country_code: null, lang });
 });
 
 app.get('/api/videos', async (_req, res) => {
